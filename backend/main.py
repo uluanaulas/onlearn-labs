@@ -206,3 +206,5 @@ async def update_progress(enrollment_id: int, request: ProgressUpdateRequest):
     enrollment.progress_percent = request.progress_percent
     return enrollment
 
+
+
