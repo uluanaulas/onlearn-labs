@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { CourseCard } from "@/components/CourseCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,97 +7,44 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search } from "lucide-react";
+import { getCourses, type Course } from "@/lib/api";
 import courseWeb from "@/assets/course-web.jpg";
 import courseDesign from "@/assets/course-design.jpg";
 import courseMarketing from "@/assets/course-marketing.jpg";
 import courseData from "@/assets/course-data.jpg";
 
-const allCourses = [
-  {
-    id: "1",
-    title: "Веб-разработка для начинающих: HTML, CSS, JavaScript",
-    image: courseWeb,
-    rating: 4.8,
-    reviewCount: 1234,
-    price: "4 990 ₽",
-    level: "Начальный",
-  },
-  {
-    id: "2",
-    title: "Основы UI/UX дизайна: от идеи до прототипа",
-    image: courseDesign,
-    rating: 4.9,
-    reviewCount: 987,
-    price: "5 490 ₽",
-    level: "Начальный",
-  },
-  {
-    id: "3",
-    title: "Цифровой маркетинг: комплексная стратегия продвижения",
-    image: courseMarketing,
-    rating: 4.7,
-    reviewCount: 756,
-    price: "6 990 ₽",
-    level: "Средний",
-  },
-  {
-    id: "4",
-    title: "Python для анализа данных: pandas, numpy, matplotlib",
-    image: courseData,
-    rating: 4.9,
-    reviewCount: 1456,
-    price: "7 490 ₽",
-    level: "Средний",
-  },
-  {
-    id: "5",
-    title: "React и современный фронтенд-разработка",
-    image: courseWeb,
-    rating: 4.8,
-    reviewCount: 892,
-    price: "8 990 ₽",
-    level: "Продвинутый",
-  },
-  {
-    id: "6",
-    title: "Графический дизайн: Adobe Photoshop и Illustrator",
-    image: courseDesign,
-    rating: 4.6,
-    reviewCount: 645,
-    price: "5 990 ₽",
-    level: "Начальный",
-  },
-  {
-    id: "7",
-    title: "SEO оптимизация и продвижение сайтов",
-    image: courseMarketing,
-    rating: 4.7,
-    reviewCount: 523,
-    price: "4 490 ₽",
-    level: "Средний",
-  },
-  {
-    id: "8",
-    title: "Machine Learning: введение в искусственный интеллект",
-    image: courseData,
-    rating: 4.9,
-    reviewCount: 1789,
-    price: "9 990 ₽",
-    level: "Продвинутый",
-  },
-  {
-    id: "9",
-    title: "Node.js и backend разработка",
-    image: courseWeb,
-    rating: 4.7,
-    reviewCount: 654,
-    price: "7 990 ₽",
-    level: "Средний",
-  },
-];
+// Маппинг изображений для курсов
+const imageMap: Record<number, string> = {
+  1: courseWeb,
+  2: courseDesign,
+  3: courseMarketing,
+  4: courseData,
+};
 
 const Courses = () => {
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Загрузка курсов из API
+  const { data: courses = [], isLoading, error } = useQuery({
+    queryKey: ['courses'],
+    queryFn: () => getCourses(true), // Только опубликованные
+  });
+
+  // Преобразование данных API в формат для CourseCard
+  const transformedCourses = courses.map((course: Course) => ({
+    id: String(course.id),
+    title: course.title,
+    image: imageMap[course.id] || courseWeb, // Используем маппинг или дефолтное изображение
+    rating: course.rating || 0,
+    reviewCount: course.review_count || 0,
+    price: course.price || "0 ₽",
+    level: course.level || "Начальный",
+  }));
+
+  // Фильтрация по поисковому запросу
+  const filteredCourses = transformedCourses.filter((course) =>
+    course.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen flex">
@@ -211,11 +159,31 @@ const Courses = () => {
           </div>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {allCourses.map((course) => (
-            <CourseCard key={course.id} {...course} />
-          ))}
-        </div>
+        {isLoading && (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Загрузка курсов...</p>
+          </div>
+        )}
+        
+        {error && (
+          <div className="text-center py-12">
+            <p className="text-destructive">Ошибка загрузки курсов. Убедитесь, что бэкенд запущен.</p>
+          </div>
+        )}
+        
+        {!isLoading && !error && (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredCourses.length > 0 ? (
+              filteredCourses.map((course) => (
+                <CourseCard key={course.id} {...course} />
+              ))
+            ) : (
+              <div className="col-span-full text-center py-12">
+                <p className="text-muted-foreground">Курсы не найдены</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Pagination */}
         <div className="mt-12 flex justify-center gap-2">

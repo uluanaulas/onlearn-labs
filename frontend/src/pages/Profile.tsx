@@ -1,36 +1,74 @@
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Award, BookOpen, CreditCard, Settings, LogOut } from "lucide-react";
-
-const myCourses = [
-  {
-    id: 1,
-    title: "Веб-разработка для начинающих",
-    progress: 25,
-    lastAccessed: "Сегодня",
-  },
-  {
-    id: 2,
-    title: "Основы UI/UX дизайна",
-    progress: 60,
-    lastAccessed: "Вчера",
-  },
-  {
-    id: 3,
-    title: "Python для анализа данных",
-    progress: 15,
-    lastAccessed: "3 дня назад",
-  },
-];
-
-const certificates = [
-  { id: 1, title: "Основы HTML и CSS", date: "15 октября 2024" },
-  { id: 2, title: "JavaScript для начинающих", date: "1 ноября 2024" },
-];
+import { useAuth } from "@/contexts/AuthContext";
+import { getMyCourses, type EnrollmentWithCourse } from "@/lib/api";
+import { Link } from "react-router-dom";
 
 const Profile = () => {
+  const { user, logout, isAuthenticated, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
+
+  // Загрузка курсов пользователя
+  // enabled: только если пользователь авторизован И не идет загрузка auth
+  const { data: enrollments = [], isLoading, error } = useQuery({
+    queryKey: ['my-courses'],
+    queryFn: getMyCourses,
+    enabled: isAuthenticated && !authLoading,
+    retry: false,
+    // Не удаляем токен при ошибке - это делает handleAuthError в api.ts
+    // Только если это явно ошибка авторизации
+  });
+
+  // Временные данные для сертификатов (пока нет API)
+  const certificates: Array<{ id: number; title: string; date: string }> = [];
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/");
+  };
+
+  // Если не авторизован, перенаправляем на страницу входа
+  if (!isAuthenticated && !authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-6 text-center">
+            <p className="mb-4 text-muted-foreground">Пожалуйста, войдите в аккаунт</p>
+            <Button onClick={() => navigate("/login")}>Войти</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Показываем загрузку, если данные еще не получены
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-6 text-center">
+            <p className="text-muted-foreground">Загрузка профиля...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Получаем инициалы для аватара
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return (
     <div className="min-h-screen">
       <div className="container py-8">
@@ -39,21 +77,21 @@ const Profile = () => {
           <CardContent className="p-6">
             <div className="flex items-start gap-6">
               <div className="flex h-24 w-24 items-center justify-center rounded-full bg-primary text-4xl font-bold text-primary-foreground">
-                АП
+                {user ? getInitials(user.name) : "U"}
               </div>
               
               <div className="flex-1">
-                <h1 className="mb-2 text-3xl font-bold">Алексей Петров</h1>
-                <p className="mb-4 text-muted-foreground">alex.petrov@example.com</p>
+                <h1 className="mb-2 text-3xl font-bold">{user?.name || "Пользователь"}</h1>
+                <p className="mb-4 text-muted-foreground">{user?.email || ""}</p>
                 
                 <div className="flex flex-wrap gap-4 text-sm">
                   <div className="flex items-center gap-2">
                     <BookOpen className="h-4 w-4 text-primary" />
-                    <span><strong>3</strong> активных курса</span>
+                    <span><strong>{enrollments.length}</strong> активных курсов</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Award className="h-4 w-4 text-success" />
-                    <span><strong>2</strong> сертификата</span>
+                    <span><strong>{enrollments.filter(e => e.progress_percent === 100).length}</strong> завершено</span>
                   </div>
                 </div>
               </div>
@@ -84,55 +122,102 @@ const Profile = () => {
           </TabsList>
 
           <TabsContent value="courses">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {myCourses.map((course) => (
-                <Card key={course.id} className="hover:shadow-card-hover transition-shadow">
-                  <CardHeader>
-                    <CardTitle className="text-lg">{course.title}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div>
-                        <div className="mb-2 flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">Прогресс</span>
-                          <span className="font-semibold">{course.progress}%</span>
+            {isLoading ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Загрузка курсов...</p>
+              </div>
+            ) : error ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <p className="mb-4 text-destructive">
+                    Ошибка: {error instanceof Error ? error.message : 'Неизвестная ошибка'}
+                  </p>
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    Проверьте консоль браузера (F12) для деталей
+                  </p>
+                  <Button onClick={() => window.location.reload()}>Обновить страницу</Button>
+                </CardContent>
+              </Card>
+            ) : enrollments.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <BookOpen className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+                  <h3 className="mb-2 text-lg font-semibold">У вас пока нет курсов</h3>
+                  <p className="mb-4 text-muted-foreground">
+                    Запишитесь на курс, чтобы начать обучение
+                  </p>
+                  <Button asChild>
+                    <Link to="/courses">Перейти к каталогу</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {enrollments.map((enrollment: EnrollmentWithCourse) => (
+                  <Card key={enrollment.enrollment_id} className="hover:shadow-card-hover transition-shadow">
+                    <CardHeader>
+                      <CardTitle className="text-lg">{enrollment.course.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="mb-2 flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Прогресс</span>
+                            <span className="font-semibold">{enrollment.progress_percent}%</span>
+                          </div>
+                          <Progress value={enrollment.progress_percent} className="h-2" />
                         </div>
-                        <Progress value={course.progress} className="h-2" />
+                        
+                        {enrollment.course.level && (
+                          <p className="text-sm text-muted-foreground">
+                            Уровень: {enrollment.course.level}
+                          </p>
+                        )}
+                        
+                        <Button className="w-full" variant="outline" asChild>
+                          <Link to={`/learning/${enrollment.course.id}`}>
+                            {enrollment.progress_percent === 100 ? "Повторить курс" : "Продолжить обучение"}
+                          </Link>
+                        </Button>
                       </div>
-                      
-                      <p className="text-sm text-muted-foreground">
-                        Последний доступ: {course.lastAccessed}
-                      </p>
-                      
-                      <Button className="w-full" variant="outline">
-                        Продолжить обучение
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="certificates">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {certificates.map((cert) => (
-                <Card key={cert.id} className="hover:shadow-card-hover transition-shadow">
-                  <CardContent className="p-6">
-                    <div className="mb-4 flex h-32 items-center justify-center rounded-lg bg-gradient-to-br from-primary/10 to-success/10">
-                      <Award className="h-16 w-16 text-primary" />
-                    </div>
-                    <h3 className="mb-2 font-semibold">{cert.title}</h3>
-                    <p className="mb-4 text-sm text-muted-foreground">
-                      Выдан {cert.date}
-                    </p>
-                    <Button variant="outline" className="w-full">
-                      Скачать PDF
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            {certificates.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Award className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+                  <h3 className="mb-2 text-lg font-semibold">У вас пока нет сертификатов</h3>
+                  <p className="text-muted-foreground">
+                    Завершите курс на 100%, чтобы получить сертификат
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {certificates.map((cert) => (
+                  <Card key={cert.id} className="hover:shadow-card-hover transition-shadow">
+                    <CardContent className="p-6">
+                      <div className="mb-4 flex h-32 items-center justify-center rounded-lg bg-gradient-to-br from-primary/10 to-success/10">
+                        <Award className="h-16 w-16 text-primary" />
+                      </div>
+                      <h3 className="mb-2 font-semibold">{cert.title}</h3>
+                      <p className="mb-4 text-sm text-muted-foreground">
+                        Выдан {cert.date}
+                      </p>
+                      <Button variant="outline" className="w-full">
+                        Скачать PDF
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="payments">
@@ -175,7 +260,11 @@ const Profile = () => {
 
         {/* Logout Button */}
         <div className="mt-8 flex justify-center">
-          <Button variant="outline" className="gap-2 text-destructive hover:text-destructive">
+          <Button 
+            variant="outline" 
+            className="gap-2 text-destructive hover:text-destructive"
+            onClick={handleLogout}
+          >
             <LogOut className="h-4 w-4" />
             Выйти из профиля
           </Button>

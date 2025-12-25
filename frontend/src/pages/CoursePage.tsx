@@ -1,8 +1,14 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Star, Clock, BarChart, Users, CheckCircle2, PlayCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Star, Clock, BarChart, Users, CheckCircle2, PlayCircle, Trash2, MessageSquare } from "lucide-react";
+import { getCourse, enrollCourse, getCourseComments, createComment, deleteComment, type Course, type Comment } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 import courseWeb from "@/assets/course-web.jpg";
 
 const lessons = [
@@ -16,32 +22,150 @@ const lessons = [
   { id: 8, title: "Финальный проект", duration: "60 мин", completed: false },
 ];
 
-const reviews = [
-  {
-    id: 1,
-    author: "Алексей Петров",
-    rating: 5,
-    date: "15 ноября 2024",
-    text: "Отличный курс! Все объяснено доступно и понятно. Уже применяю полученные знания в работе.",
-  },
-  {
-    id: 2,
-    author: "Мария Иванова",
-    rating: 5,
-    date: "12 ноября 2024",
-    text: "Преподаватель просто супер! Много практики, хорошая структура материала.",
-  },
-  {
-    id: 3,
-    author: "Дмитрий Смирнов",
-    rating: 4,
-    date: "8 ноября 2024",
-    text: "Хороший курс для начинающих. Немного не хватило глубины в некоторых темах.",
-  },
-];
-
 const CoursePage = () => {
   const { id } = useParams();
+  const courseId = id ? parseInt(id) : 0;
+  const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [commentText, setCommentText] = useState("");
+
+  // Загрузка курса из API
+  const { data: course, isLoading, error } = useQuery({
+    queryKey: ['course', courseId],
+    queryFn: () => getCourse(courseId),
+    enabled: courseId > 0,
+  });
+
+  // Загрузка комментариев
+  const { data: comments = [], refetch: refetchComments } = useQuery({
+    queryKey: ['comments', courseId],
+    queryFn: () => getCourseComments(courseId),
+    enabled: courseId > 0,
+  });
+
+  // Мутация для записи на курс
+  const enrollMutation = useMutation({
+    mutationFn: () => enrollCourse(courseId),
+    onSuccess: () => {
+      toast({
+        title: "Успешно!",
+        description: "Вы записались на курс",
+      });
+      queryClient.invalidateQueries({ queryKey: ['my-courses'] });
+      navigate(`/learning/${courseId}`);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Мутация для создания комментария
+  const createCommentMutation = useMutation({
+    mutationFn: (text: string) => createComment(courseId, text),
+    onSuccess: () => {
+      setCommentText("");
+      refetchComments();
+      toast({
+        title: "Успешно!",
+        description: "Комментарий добавлен",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Мутация для удаления комментария
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: number) => deleteComment(commentId),
+    onSuccess: () => {
+      refetchComments();
+      toast({
+        title: "Успешно!",
+        description: "Комментарий удален",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSubmitComment = () => {
+    if (!isAuthenticated) {
+      toast({
+        title: "Требуется вход",
+        description: "Пожалуйста, войдите в аккаунт для добавления комментария",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+    if (!commentText.trim()) {
+      toast({
+        title: "Ошибка",
+        description: "Введите текст комментария",
+        variant: "destructive",
+      });
+      return;
+    }
+    createCommentMutation.mutate(commentText);
+  };
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ru-RU', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const handleEnroll = () => {
+    if (!isAuthenticated) {
+      toast({
+        title: "Требуется вход",
+        description: "Пожалуйста, войдите в аккаунт для записи на курс",
+        variant: "destructive",
+      });
+      navigate("/login");
+      return;
+    }
+    enrollMutation.mutate();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="container py-8">
+        <p className="text-center text-muted-foreground">Загрузка курса...</p>
+      </div>
+    );
+  }
+
+  if (error || !course) {
+    return (
+      <div className="container py-8">
+        <p className="text-center text-destructive">Курс не найден. Убедитесь, что бэкенд запущен.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -51,15 +175,19 @@ const CoursePage = () => {
           <div className="lg:col-span-2">
             <div className="mb-6">
               <h1 className="mb-4 text-4xl font-bold">
-                Веб-разработка для начинающих: HTML, CSS, JavaScript
+                {course.title}
               </h1>
               
               <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-1">
-                  <Star className="h-4 w-4 fill-accent text-accent" />
-                  <span className="font-semibold text-foreground">4.8</span>
-                  <span>(1,234 отзывов)</span>
-                </div>
+                {course.rating && (
+                  <div className="flex items-center gap-1">
+                    <Star className="h-4 w-4 fill-accent text-accent" />
+                    <span className="font-semibold text-foreground">{course.rating}</span>
+                    {course.review_count && (
+                      <span>({course.review_count.toLocaleString()} отзывов)</span>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
                   <span>5,678 студентов</span>
@@ -68,10 +196,12 @@ const CoursePage = () => {
                   <Clock className="h-4 w-4" />
                   <span>6 часов</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <BarChart className="h-4 w-4" />
-                  <span>Начальный</span>
-                </div>
+                {course.level && (
+                  <div className="flex items-center gap-1">
+                    <BarChart className="h-4 w-4" />
+                    <span>{course.level}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -102,9 +232,7 @@ const CoursePage = () => {
                 <div>
                   <h3 className="mb-3 text-xl font-semibold">О курсе</h3>
                   <p className="text-muted-foreground leading-relaxed">
-                    Этот курс предназначен для тех, кто хочет начать карьеру в веб-разработке с нуля.
-                    Вы изучите основы HTML, CSS и JavaScript, научитесь создавать интерактивные
-                    веб-страницы и получите все необходимые навыки для дальнейшего развития.
+                    {course.description}
                   </p>
                 </div>
 
@@ -169,31 +297,88 @@ const CoursePage = () => {
 
               <TabsContent value="reviews" className="mt-6">
                 <div className="space-y-6">
-                  {reviews.map((review) => (
-                    <Card key={review.id}>
+                  {/* Форма для добавления комментария */}
+                  {isAuthenticated && (
+                    <Card>
                       <CardContent className="p-6">
-                        <div className="mb-3 flex items-center justify-between">
-                          <div>
-                            <p className="font-semibold">{review.author}</p>
-                            <p className="text-sm text-muted-foreground">{review.date}</p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`h-4 w-4 ${
-                                  i < review.rating
-                                    ? "fill-accent text-accent"
-                                    : "text-muted"
-                                }`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <p className="text-muted-foreground">{review.text}</p>
+                        <h3 className="mb-4 text-lg font-semibold">Добавить комментарий</h3>
+                        <Textarea
+                          placeholder="Напишите ваш комментарий..."
+                          value={commentText}
+                          onChange={(e) => setCommentText(e.target.value)}
+                          className="mb-4 min-h-[100px]"
+                        />
+                        <Button
+                          onClick={handleSubmitComment}
+                          disabled={createCommentMutation.isPending || !commentText.trim()}
+                        >
+                          {createCommentMutation.isPending ? "Отправка..." : "Отправить"}
+                        </Button>
                       </CardContent>
                     </Card>
-                  ))}
+                  )}
+
+                  {!isAuthenticated && (
+                    <Card>
+                      <CardContent className="p-6 text-center">
+                        <MessageSquare className="mx-auto mb-2 h-12 w-12 text-muted-foreground" />
+                        <p className="text-muted-foreground mb-4">
+                          Войдите в аккаунт, чтобы оставить комментарий
+                        </p>
+                        <Button onClick={() => navigate("/login")}>
+                          Войти
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Список комментариев */}
+                  <div className="space-y-4">
+                    {comments.length === 0 ? (
+                      <Card>
+                        <CardContent className="p-6 text-center text-muted-foreground">
+                          Пока нет комментариев. Будьте первым!
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      comments.map((comment) => (
+                        <Card key={comment.id}>
+                          <CardContent className="p-6">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="mb-2 flex items-center gap-2">
+                                  <p className="font-semibold">
+                                    {comment.user_name || `Пользователь #${comment.user_id}`}
+                                  </p>
+                                  <span className="text-sm text-muted-foreground">
+                                    {formatDate(comment.created_at)}
+                                  </span>
+                                </div>
+                                <p className="text-muted-foreground whitespace-pre-wrap">
+                                  {comment.text}
+                                </p>
+                              </div>
+                              {isAuthenticated && user && comment.user_id === user.id && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (confirm("Удалить комментарий?")) {
+                                      deleteCommentMutation.mutate(comment.id);
+                                    }
+                                  }}
+                                  disabled={deleteCommentMutation.isPending}
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
                 </div>
               </TabsContent>
             </Tabs>
@@ -204,19 +389,25 @@ const CoursePage = () => {
             <Card className="sticky top-24">
               <CardContent className="p-6">
                 <div className="mb-6">
-                  <div className="mb-2 text-3xl font-bold">4 990 ₽</div>
-                  <div className="text-sm text-muted-foreground line-through">7 990 ₽</div>
+                  <div className="mb-2 text-3xl font-bold">{course.price || "Бесплатно"}</div>
                 </div>
 
-                <Button className="mb-4 w-full" size="lg" asChild>
-                  <Link to={`/learning/${id}`}>Записаться на курс</Link>
+                <Button 
+                  className="mb-4 w-full" 
+                  size="lg" 
+                  onClick={handleEnroll}
+                  disabled={enrollMutation.isPending}
+                >
+                  {enrollMutation.isPending ? "Запись..." : "Записаться на курс"}
                 </Button>
 
                 <div className="space-y-3 border-t pt-4 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Уровень</span>
-                    <span className="font-medium">Начальный</span>
-                  </div>
+                  {course.level && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Уровень</span>
+                      <span className="font-medium">{course.level}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Длительность</span>
                     <span className="font-medium">6 часов</span>

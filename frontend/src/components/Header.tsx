@@ -1,11 +1,14 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Search, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const Header = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
   
   const navItems = [
     { label: "Главная", path: "/" },
@@ -53,11 +56,17 @@ export const Header = () => {
             />
           </div>
           
-          <Button variant="ghost" size="icon" asChild>
-            <Link to="/profile">
-              <User className="h-5 w-5" />
-            </Link>
-          </Button>
+          {isAuthenticated ? (
+            <Button variant="ghost" size="icon" asChild>
+              <Link to="/profile" title={user?.name || "Профиль"}>
+                <User className="h-5 w-5" />
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="default" asChild>
+              <Link to="/login">Войти</Link>
+            </Button>
+          )}
         </div>
       </div>
     </header>
