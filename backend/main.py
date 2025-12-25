@@ -153,7 +153,17 @@ def get_password_hash(password: str) -> str:
 
 # Cookie-based authentication
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> UserModel:
+    # Для отладки в продакшене (можно убрать после проверки)
+    import os
+    is_production = os.getenv("RENDER") is not None or os.getenv("ENVIRONMENT") == "production"
+    
     user_id = request.cookies.get("session_user_id")
+    
+    # Логируем для отладки в продакшене
+    if is_production:
+        print(f"[AUTH DEBUG] Cookie received: {user_id}")
+        print(f"[AUTH DEBUG] All cookies: {request.cookies}")
+    
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -249,20 +259,34 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
     if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     
-    # Определяем secure для cookies (True для HTTPS в продакшене)
+    # Определяем secure и samesite для cookies
     import os
     is_production = os.getenv("RENDER") is not None or os.getenv("ENVIRONMENT") == "production"
-    secure_cookie = is_production  # True для HTTPS в продакшене
+    
+    # Для продакшена (кросс-доменные запросы): SameSite=None требует Secure=True
+    # Для локальной разработки: SameSite=Lax, Secure=False
+    if is_production:
+        secure_cookie = True
+        samesite_value = "none"  # Для кросс-доменных запросов
+    else:
+        secure_cookie = False
+        samesite_value = "lax"   # Для локальной разработки
+    
+    # Логирование для отладки
+    print(f"[LOGIN] Setting cookie: user_id={user.id}, secure={secure_cookie}, samesite={samesite_value}, is_production={is_production}")
     
     response.set_cookie(
         key="session_user_id",
         value=str(user.id),
         httponly=True,
-        samesite="lax",
+        samesite=samesite_value,
         secure=secure_cookie,
         max_age=86400 * 7,
         path="/"
     )
+    
+    # Дополнительная проверка для отладки
+    print(f"[LOGIN] Cookie should be set in response headers")
     
     return {
         "success": True,
@@ -277,7 +301,23 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
 
 @app.post("/logout")
 async def logout(response: Response):
-    response.delete_cookie(key="session_user_id")
+    # Используем те же настройки, что и при установке cookie
+    import os
+    is_production = os.getenv("RENDER") is not None or os.getenv("ENVIRONMENT") == "production"
+    
+    if is_production:
+        secure_cookie = True
+        samesite_value = "none"
+    else:
+        secure_cookie = False
+        samesite_value = "lax"
+    
+    response.delete_cookie(
+        key="session_user_id",
+        path="/",
+        samesite=samesite_value,
+        secure=secure_cookie
+    )
     return {"success": True, "message": "Logged out"}
 
 @app.get("/me", response_model=User)
