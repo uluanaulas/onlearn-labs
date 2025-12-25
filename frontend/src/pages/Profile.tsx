@@ -18,10 +18,16 @@ const Profile = () => {
   const { data: enrollments = [], isLoading, error } = useQuery({
     queryKey: ['my-courses'],
     queryFn: getMyCourses,
-    enabled: isAuthenticated && !authLoading,
-    retry: false,
-    // Не удаляем токен при ошибке - это делает handleAuthError в api.ts
-    // Только если это явно ошибка авторизации
+    enabled: isAuthenticated && !authLoading && !!user,
+    retry: (failureCount, error) => {
+      // Retry только для сетевых ошибок, не для 401
+      if (error instanceof Error && error.message.includes('401')) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 3000),
+    staleTime: 30000, // Кэшируем на 30 секунд
   });
 
   // Временные данные для сертификатов (пока нет API)

@@ -62,6 +62,7 @@ async function fetchAPI(url: string, options: RequestInit = {}) {
   
   if (!response.ok) {
     if (response.status === 401) {
+      // Для 401 не делаем автоматический logout - пусть компоненты решают
       throw new Error('Please login first');
     }
     const errorText = await response.text().catch(() => response.statusText);

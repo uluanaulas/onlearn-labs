@@ -21,10 +21,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const currentUser = await getCurrentUser();
         setUser(currentUser);
-      } catch {
+      } catch (error) {
         // Нет активной сессии - это нормально
         setUser(null);
       } finally {
+        // Небольшая задержка для гарантии завершения инициализации
+        // Особенно важно в продакшене из-за cold start
+        await new Promise(resolve => setTimeout(resolve, 100));
         setIsLoading(false);
       }
     };
@@ -33,6 +36,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const loginResponse = await apiLogin(email, password);
+    // Небольшая задержка после логина, чтобы cookie успела установиться
+    // Особенно важно для кросс-доменных запросов в продакшене
+    await new Promise(resolve => setTimeout(resolve, 200));
     setUser(loginResponse.user);
   };
 
