@@ -249,12 +249,17 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
     if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     
+    # Определяем secure для cookies (True для HTTPS в продакшене)
+    import os
+    is_production = os.getenv("RENDER") is not None or os.getenv("ENVIRONMENT") == "production"
+    secure_cookie = is_production  # True для HTTPS в продакшене
+    
     response.set_cookie(
         key="session_user_id",
         value=str(user.id),
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=secure_cookie,
         max_age=86400 * 7,
         path="/"
     )
@@ -336,72 +341,6 @@ async def update_progress(enrollment_id: int, request: ProgressUpdateRequest, cu
 
 @app.get("/courses/{course_id}/comments", response_model=List[Comment])
 async def get_course_comments(course_id: int, db: Session = Depends(get_db)):
-    """Получить все комментарии к курсу"""
-    db_course = db.query(CourseModel).filter(CourseModel.id == course_id).first()
-    if not db_course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    
-    db_comments = db.query(CommentModel).filter(CommentModel.course_id == course_id).order_by(CommentModel.id.desc()).all()
-    result = []
-    for db_comment in db_comments:
-        user = db.query(UserModel).filter(UserModel.id == db_comment.user_id).first()
-        result.append(Comment(
-            id=db_comment.id,
-            user_id=db_comment.user_id,
-            course_id=db_comment.course_id,
-            text=db_comment.text,
-            created_at=db_comment.created_at,
-            user_name=user.name if user else None
-        ))
-    return result
-
-@app.post("/courses/{course_id}/comments", response_model=Comment, status_code=201)
-async def create_comment(course_id: int, request: Request, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Создать комментарий к курсу"""
-    db_course = db.query(CourseModel).filter(CourseModel.id == course_id).first()
-    if not db_course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    
-    # Читаем JSON напрямую
-    import json
-    from datetime import datetime
-    body_bytes = await request.body()
-    body = json.loads(body_bytes.decode())
-    text = body.get("text") or ""
-    
-    if not text or len(text.strip()) == 0:
-        raise HTTPException(status_code=422, detail="Comment text is required")
-    
-    db_comment = CommentModel(
-        user_id=current_user.id,
-        course_id=course_id,
-        text=text.strip(),
-        created_at=datetime.now().isoformat()
-    )
-    db.add(db_comment)
-    db.commit()
-    db.refresh(db_comment)
-    
-    return Comment(
-        id=db_comment.id,
-        user_id=db_comment.user_id,
-        course_id=db_comment.course_id,
-        text=db_comment.text,
-        created_at=db_comment.created_at,
-        user_name=current_user.name
-    )
-
-@app.delete("/comments/{comment_id}")
-async def delete_comment(comment_id: int, current_user: UserModel = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Удалить свой комментарий"""
-    db_comment = db.query(CommentModel).filter(CommentModel.id == comment_id).first()
-    if not db_comment:
-        raise HTTPException(status_code=404, detail="Comment not found")
-    if db_comment.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only delete your own comments")
-    db.delete(db_comment)
-    db.commit()
-    return {"success": True, "message": "Comment deleted"}
     """Получить все комментарии к курсу"""
     db_course = db.query(CourseModel).filter(CourseModel.id == course_id).first()
     if not db_course:
