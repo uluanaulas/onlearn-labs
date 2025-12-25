@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+
+      - name: Syntax check
+        run: |
+          python -m py_compile backend/main.py
+
+      - name: Import FastAPI
+        run: |
+          python - <<EOF
+          import fastapi
+          print("FastAPI imported successfully")
+          EOF
